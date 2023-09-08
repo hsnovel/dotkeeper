@@ -96,10 +96,34 @@ void encode(char *file_path)
 	}
 
 	FILE *file_encoded = fopen(encode_file_path, "a+");
+	usize file_size;
+	fseek(file_encoded, 0, SEEK_END);
+	file_size = ftell(file_encoded);
+	fseek(file_encoded, 0, SEEK_SET);
+
+	if (file_size != 0) {
+		printf("encoded.buf is not empty, do you want to erease all data? [y/N] ");
+		char line[2];
+		char c;
+
+		if (!fgets(line, sizeof(line), stdin))
+			die("Unable to get input\n");
+
+		if (sscanf(line, "%c", &c) != 1)
+			die("Invalid input\n");
+
+		if (c == 'y' || c == 'Y') {
+			FILE *tmpf = fopen(encode_file_path, "w");
+			fclose(tmpf);
+		} else {
+			exit(0);
+		}
+	}
+
+
 	if (file_encoded == NULL)
 		die("Unable to open file: %s\n", encode_file_path);
 
-	printf("num files: %zu\n", num_files);
 	for (int i = 0; i < num_files; i++) {
 		char *path;
 		struct fs_file file;
@@ -119,12 +143,65 @@ void encode(char *file_path)
 		fwrite(file.data, 1, file.size, file_encoded);
 	}
 
-	for (int i = 0; i < num_files; i++)
-		printf("%s", strvec_get(&files, i));
+	/*
+	 * for (int i = 0; i < num_files; i++)
+	 * 	printf("%s", strvec_get(&files, i));
+	 */
+
+	fclose(file_encoded);
 }
 
-void decode(char *file)
+void decode(char *file_path)
 {
+	struct fs_file file;
+	char *env;
+
+	file = fs_file_read(file_path, FS_READ_BINARY);
+	if (file.data == NULL || file.size < sizeof(usize) * 2)
+		die("Unable to read file: %s\n", file_path);
+
+	env = getenv("HOME");
+	/*
+	 * if (env == NULL) {
+	 * 	printf("HOME variable is not set, you will be writing the data to the root directory, are you sure? [y/N] ");
+	 * }
+	 */
+
+	for (;;) {
+		/* Check if we have 2 more size_t to read for header */
+		if (file.size <= (sizeof(usize) * 2))
+			break;
+
+		usize len_path = *(usize*)file.data;
+		usize len_data = *(usize*)((char*)(file.data + sizeof(usize)));
+		char *path = file.data + (2 * sizeof(usize));
+		void *data = path + len_path;
+		usize num_bytes_to_next_header;
+		FILE *destfs;
+		usize destfs_size;
+
+
+		memset(tmp, 0, MAX_PATH_SIZE);
+		memcpy(tmp, path, len_path);
+
+		/*
+		 * printf("len_path: %zu, len_data: %zu\n", len_path, len_data);
+		 * printf("path: %s\n", tmp);
+		 * printf("data: %.*s\n", (int)len_data, (char*)data);
+		 */
+
+		destfs = fopen(tmp, "w+");
+		if (destfs == NULL)
+			die("Unable to read file: %s: %s\n", tmp, strerror(errno));
+
+		fwrite(data, 1, len_data, destfs);
+
+		fclose(destfs);
+
+		num_bytes_to_next_header = len_data + len_path + (2 * sizeof(usize));
+		file.size -= num_bytes_to_next_header;
+		file.data += num_bytes_to_next_header;
+	}
 }
 
 int main(int argc, char **argv)
