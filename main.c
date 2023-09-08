@@ -18,8 +18,6 @@
 struct section {
 	usize len_path;
 	usize len_data;
-	void *path;
-	void *data;
 };
 
 struct file {
@@ -41,6 +39,7 @@ usize num_lines(char *buf)
 
 #define MAX_PATH_SIZE 4096
 char tmp[MAX_PATH_SIZE];
+char *encode_file_path = "encoded.buf";
 
 char* read_line_to_buffer(char *src, char *buf, usize buf_size)
 {
@@ -54,7 +53,7 @@ char* read_line_to_buffer(char *src, char *buf, usize buf_size)
 
 void encode(char *file_path)
 {
-	usize file_line_count;
+	usize num_files;
 	char *ptr;
 	char *env;
 	struct fs_file file = fs_file_read(file_path, FS_READ_TEXT);
@@ -64,14 +63,14 @@ void encode(char *file_path)
 	if (file.data == NULL || file.size == 0)
 		die("Unable to read file\n");
 
-	file_line_count= num_lines(file.data);
+	num_files= num_lines(file.data);
 	ptr = file.data;
 
 	if (!strvec_init(&files))
 		die("Unable to initialize files");
 
 	/* Add files to vector */
-	for (int i = 0; i < file_line_count; i++) {
+	for (int i = 0; i < num_files; i++) {
 		memset(tmp, 0, MAX_PATH_SIZE);
 		ptr = read_line_to_buffer(ptr, tmp, MAX_PATH_SIZE);
 		strvec_push(&files, tmp);
@@ -82,22 +81,46 @@ void encode(char *file_path)
 		die("Unable to init strvec");
 
 	/* Get absolute paths to the file, replacing $HOMEDIR to read files */
-	for (int i = 0; i < file_line_count; i++) {
+	for (int i = 0; i < num_files; i++) {
 		char *path;
 		path = strvec_get(&files, i);
 
 		/* Replace homedir with enviroment variable */
 		if ((strlen(path) > strlen("$HOMEDIR")) && (memcmp(path, "$HOMEDIR", 8) == 0)) {
 			path += strlen("$HOMEDIR");
-			char *absolute_path = xasprintf("%s%s\n", env, path);
+			char *absolute_path = xasprintf("%s%s", env, path);
 			strvec_push(&files_absolute, absolute_path);
 		} else {
 			strvec_push(&files_absolute, path);
 		}
 	}
 
-	for (int i = 0; i < file_line_count; i++)
-		printf("%s\n", strvec_get(&files_absolute, i));
+	FILE *file_encoded = fopen(encode_file_path, "a+");
+	if (file_encoded == NULL)
+		die("Unable to open file: %s\n", encode_file_path);
+
+	printf("num files: %zu\n", num_files);
+	for (int i = 0; i < num_files; i++) {
+		char *path;
+		struct fs_file file;
+		struct section header;
+
+		path = strvec_get(&files_absolute, i);
+		file = fs_file_read(path, FS_READ_BINARY);
+
+		if (file.data == NULL || file.size == 0)
+			die("Unable to read file: %s\n", path);
+
+		header.len_path = strlen(path);
+		header.len_data = file.size;
+
+		fwrite(&header, 1, sizeof(header), file_encoded);
+		fwrite(path, 1, strlen(path), file_encoded);
+		fwrite(file.data, 1, file.size, file_encoded);
+	}
+
+	for (int i = 0; i < num_files; i++)
+		printf("%s", strvec_get(&files, i));
 }
 
 void decode(char *file)
