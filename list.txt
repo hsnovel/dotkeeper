@@ -1,0 +1,2 @@
+$HOME/.config/test.c
+test

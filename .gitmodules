@@ -1,0 +1,6 @@
+[submodule "sdx"]
+	path = sdx
+	url = git@github.com:xcatalyst/sdx.git
+[submodule "libraries/sdx"]
+	path = libraries/sdx
+	url = git@github.com:xcatalyst/sdx.git
